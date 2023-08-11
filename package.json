@@ -1,0 +1,24 @@
+{
+  "name": "yqt_f",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@devui-design/icons": "^1.3.0",
+    "axios": "^1.4.0",
+    "devui-theme": "^0.0.6",
+    "jszip": "^3.10.1",
+    "localforage": "^1.10.0",
+    "vue": "^3.3.4",
+    "vue-axios": "^3.5.2",
+    "vue-devui": "^1.5.7-hotfix.3"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.3",
+    "vite": "^4.4.6"
+  }
+}
