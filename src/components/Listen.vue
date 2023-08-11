@@ -252,11 +252,16 @@ function exit() {
 function handleSelectSuggestion(suggestion) {
   ws.send("order_" + suggestion.sid);
 }
+
+const search=ref()
+const handleGlobalClick = (event) => {
+  search.value.showSuggestionList = false;
+}
 </script>
 
 <template>
-  <Search @onSelectSuggestion="handleSelectSuggestion"/>
-
+  <Search @onSelectSuggestion="handleSelectSuggestion"  ref="search"/>
+<div @click="handleGlobalClick">
   <!--音量-->
   <div class="volume-control">
     <label for="volume-slider">音量:</label>
@@ -334,7 +339,7 @@ function handleSelectSuggestion(suggestion) {
 
 
   </div>
-
+</div>
 </template>
 
 <style scoped>

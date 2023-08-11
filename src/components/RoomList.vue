@@ -25,6 +25,7 @@ onMounted(async () => {
     // 请求失败，处理错误
     console.error('请求出错', error);
   }
+
 });
 const onRowClick = (params) => {
   window.location.href = "#listen?roomId=" + params.row.id;
@@ -51,16 +52,21 @@ function createRoom() {
   showSearch.value = true;
 }
 
+const search=ref()
+const handleGlobalClick = (event) => {
+  search.value.showSuggestionList = false;
+}
 </script>
 
 <template>
-  <Search @onSelectSuggestion="handleSelectSuggestion" v-if="showSearch"/>
+  <Search @onSelectSuggestion="handleSelectSuggestion" v-if="showSearch" ref="search"/>
+  <div  @click="handleGlobalClick">
   <d-button @click="createRoom">创建房间</d-button>
   <d-table :data="itemList" style="width: 100%"     @row-click="onRowClick">
     <d-column field="name" header="房间名"></d-column>
     <d-column field="user_count" header="人数"></d-column>
   </d-table>
-
+  </div>
 </template>
 
 <style scoped>

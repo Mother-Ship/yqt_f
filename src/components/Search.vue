@@ -8,11 +8,8 @@ import axios from "axios";
 const showSuggestionList = ref(false);
 const showImage = ref(true);
 const suggestions = ref([]);
-this.handleGlobalClick =  () => {
-  showSuggestionList.value = false;
-};
-onMounted(() => {
-  document.addEventListener('click', this.handleGlobalClick);
+defineExpose({
+  showSuggestionList
 })
 async function onSearch(keyword) {
   try {
