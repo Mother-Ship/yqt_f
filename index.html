@@ -11,7 +11,7 @@
 <script type="module" src="/src/main.js"></script>
 <script>
     console.log(window.location.hash)
-    if (window.location.hash === '#') {
+    if (window.location.hash === '') {
         const token = localStorage.getItem('Authorization');
 
         if (!token) {

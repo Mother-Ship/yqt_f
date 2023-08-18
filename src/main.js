@@ -14,10 +14,11 @@ ThemeServiceInit({ infinityTheme }, 'infinityTheme');
 
 
 const app = createApp(App)
+
 //注入axios
 app.use(VueAxios, axios)
-app.use(DevUI)
-
 app.provide('axios', app.config.globalProperties.axios)
+
+app.use(DevUI)
 
 app.mount('#app')

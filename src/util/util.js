@@ -1,4 +1,6 @@
 import {ref} from "vue";
+import axios from "axios";
+import {NotificationService} from "vue-devui/notification";
 
 export function getParam(paramName) {
     let uri = window.location.href.split('?');
@@ -23,4 +25,27 @@ export function formatTime(seconds) {
     const formattedSeconds = String(remainingSeconds).padStart(2, '0');
 
     return `${formattedMinutes}:${formattedSeconds}`;
+}
+export async function post(url, data) {
+    const Authorization = localStorage.getItem('Authorization');
+    const response = await axios.post('http://' + import.meta.env.VITE_BACKEND_URL +':8095' + url, data, {
+        headers: {
+            'Authorization': Authorization
+        }
+    }).catch(function (error) {
+        if (error.response.status === 401) {
+            NotificationService.open({
+                title: '登录失效，请重新登录',
+                type: 'error',
+                duration: 3000
+            });
+            window.location.href = "#login";
+        }
+        return error.response;
+    });
+
+    if (response.headers['authorization'] != null) {
+        localStorage.setItem('Authorization', response.headers['authorization']);
+    }
+    return response;
 }

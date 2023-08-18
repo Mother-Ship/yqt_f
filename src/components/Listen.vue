@@ -4,7 +4,7 @@ import {onMounted, ref, watch} from "vue";
 import axios from 'axios';
 import JSZip from 'jszip';
 import localForage from "localforage";
-import {getParam} from '@/util/util.js'
+import {getParam, post} from '@/util/util.js'
 import {formatTime} from '@/util/util.js'
 import {NotificationService} from 'vue-devui/notification';
 import {onBeforeUnmount} from "@vue/runtime-core";
@@ -20,17 +20,8 @@ let roomId = getParam('roomId');
 const members = ref([]);
 let ws = null;
 
-async function refreshToken() {
-  var Authorization = localStorage.getItem('Authorization');
-  const response = await axios.post('http://k3.mothership.top:8095/api/login/refreshToken', {}, {
-    headers: {
-      'Authorization': Authorization
-    }
-  });
-
-  if (response.headers['authorization'] != null) {
-    localStorage.setItem('Authorization', response.headers['authorization']);
-  }
+function refreshToken() {
+  post('/api/login/refreshToken', {});
 }
 
 //页面挂载时连接websocket
@@ -38,31 +29,50 @@ onMounted(async () => {
   await refreshToken();
 
   var protocol = localStorage.getItem('Authorization');
-  ws = new WebSocket("ws://k3.mothership.top:8095/websocket/" + roomId.value, [protocol]);
+  ws = new WebSocket("ws://" + import.meta.env.VITE_BACKEND_URL +":8095/websocket/" + roomId.value, [protocol]);
   ws.onopen = function () {
-    console.log("连接成功");
+    NotificationService.open({
+      title: '房间连接成功',
+      type: 'success',
+      duration: 3000
+    });
   };
 
   ws.onmessage = function (evt) {
     let data = JSON.parse(evt.data);
-    members.value = data.users;
-    //无论是否刷新都缓存下一首歌
-    preload(data.next_beatmap_set_id);
+    if (data.type === 'FULL_ROOM_INFO' || data.type === 'ROOM_USER') {
+      members.value = data.data.users;
+    }
 
-    //刷新逻辑: 有用户加入，当前用户为true，其他用户为false；
-    //点歌为false； 切歌所有用户为true；暂停继续当前用户为true
-    if (data.refresh_play){
+    if (data.type === 'FULL_ROOM_INFO' || data.type === 'PLAYING_INFO') {
       console.log('刷新播放');
-      sid.value = data.current_beatmap_set_id;
-      beatmapName.value = data.current_beatmap_name;
-      startTime.value = data.server_timestamp - data.current_beatmap_start_timestamp
+      sid.value = data.data.current_beatmap_set_id;
+      beatmapName.value = data.data.current_beatmap_name;
+      startTime.value = data.data.server_timestamp - data.data.current_beatmap_start_timestamp
+      preload(data.data.next_beatmap_set_id);
       startPlayback();
     }
 
-    playedQueue.value = data.played_queue.reverse();
-    notPlayedQueue.value = data.not_played_queue;
+    if (data.type === 'FULL_ROOM_INFO' || data.type === 'PLAY_LIST') {
+      playedQueue.value = data.data.played_queue.reverse();
+      notPlayedQueue.value = data.data.not_played_queue;
+    }
+    if (data.type === 'MESSAGE') {
+      NotificationService.open({
+        title: data.message,
+        type: data.success ? 'info' : 'error',
+        duration: 3000
+      });
+    }
   };
-
+  ws.onclose = function () {
+    NotificationService.open({
+      title: '房间连接断开',
+      type: 'info',
+      duration: 3000
+    });
+    window.location.href = "#roomList";
+  };
 
 });
 onBeforeUnmount(() => {
@@ -152,7 +162,9 @@ async function startPlayback() {
         }).catch(error => {
           console.log(error);
           NotificationService.open({
-            content: '当前浏览器设置无法自动播放，请调整，edge/chrome直接在设置中搜索【媒体自动播放】添加当前域名即可',
+            content: '当前浏览器设置无法自动播放，请调整；\n' +
+                'edge/chrome直接在设置中搜索【媒体自动播放】添加当前域名即可；\n' +
+                '移动端/没有该项设置的浏览器，可以手动暂停/继续一次',
           });
         });
       }
@@ -240,6 +252,9 @@ function openPpySh() {
 //切歌
 function voteForSwitch() {
   ws.send("vote");
+  NotificationService.open({
+    content: '已进行投票',
+  });
 }
 
 //退出房间
@@ -251,95 +266,104 @@ function exit() {
 //点歌
 function handleSelectSuggestion(suggestion) {
   ws.send("order_" + suggestion.sid);
+  NotificationService.open({
+    content: '点歌' + suggestion.artistU === "" ? suggestion.artist : suggestion.artistU
+    + '-' +
+    suggestion.titleU === "" ? suggestion.title : suggestion.titleU
+        + '(' + suggestion.creator + ')成功',
+  });
 }
 
-const search=ref()
+const search = ref()
 const handleGlobalClick = (event) => {
   search.value.showSuggestionList = false;
 }
 </script>
 
 <template>
-  <Search @onSelectSuggestion="handleSelectSuggestion"  ref="search"/>
-<div @click="handleGlobalClick">
-  <!--音量-->
-  <div class="volume-control">
-    <label for="volume-slider">音量:</label>
-    <input
-        id="volume-slider"
-        v-model="volume"
-        max="100"
-        min="0"
-        type="range"
-        @input="updateVolume"
-    />
-  </div>
+  <Search ref="search" @onSelectSuggestion="handleSelectSuggestion"/>
+  <div @click="handleGlobalClick">
+    <!--音量-->
+    <div class="volume-control">
+      <label for="volume-slider">音量:</label>
+      <input
+          id="volume-slider"
+          v-model="volume"
+          max="100"
+          min="0"
+          type="range"
+          @input="updateVolume"
+      />
+    </div>
 
-  <!--  控制按钮-->
-  <div>
-    <d-button @click="togglePlay">{{ playButtonText }}</d-button>
-    <d-button @click="openPpySh">打开官网</d-button>
-    <d-button @click="voteForSwitch">投票切歌</d-button>
-  </div>
+    <!--  控制按钮-->
+    <div>
+      <d-button @click="togglePlay">{{ playButtonText }}</d-button>
+      <d-button @click="openPpySh">打开官网</d-button>
+      <d-button @click="voteForSwitch">投票切歌</d-button>
+    </div>
 
-  <!--  成员列表-->
-  <div>
-    当前房间成员：
+    <!--  成员列表-->
+    <div>
+      当前房间成员：
 
-    <ul>
-      <li v-for="member in members" :key="member">
-        <d-avatar :height="32" :img-src=getAvatar(member.id) :isRound="true" :width="32"></d-avatar>
-        <span class="suggestion-text">{{ member.name }}</span>
-      </li>
-    </ul>
+      <ul>
+        <li v-for="member in members" :key="member">
+          <d-avatar :height="32" :img-src=getAvatar(member.id) :isRound="true" :width="32"></d-avatar>
+          <span class="suggestion-text">{{ member.name }}</span>
+        </li>
+      </ul>
 
-  </div>
+    </div>
 
 
-  <!--进度条-->
-  <div class="progress-bar">
-    <div class="progress-container">
-      <d-progress :percentage=progressPercent></d-progress>
+    <!--进度条-->
+    <div class="progress-bar">
+      <div class="progress-container">
+        <d-progress :percentage=progressPercent></d-progress>
+      </div>
+    </div>
+    <br>
+    <!--    播放时间，格式化为分秒格式-->
+    <div>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</div>
+
+
+    <!--  歌曲信息-->
+    <div v-if="notPlayedQueue.length > 0">
+      当前播放：{{ notPlayedQueue[0].beatmap_set_name }}
+    </div>
+    <div v-if="notPlayedQueue.length > 0">
+    点歌人：{{ notPlayedQueue[0].creator_name }}
+    </div>
+
+    <!--  播放列表-->
+    <div>
+      <d-button @click="switchShowNotPlayedQueue">已放列表</d-button>
+      <d-button @click="switchShowPlayedQueue">待放列表</d-button>
+      <d-button @click="exit">退出房间</d-button>
+
+      <ul v-if="showPlayedQueue">
+        <li v-for="song in playedQueue" :key="song">
+          <span class="suggestion-text">{{ song.sort }} .</span>
+          <span class="suggestion-text">{{ song.beatmap_set_name }}</span>
+          <br>
+          <span class="suggestion-text">{{ song.creator_name }}</span>
+        </li>
+      </ul>
+
+
+      <ul v-if="showNotPlayedQueue">
+        <li v-for="song in notPlayedQueue" :key="song">
+          <span class="suggestion-text">{{ song.sort }} .</span>
+          <span class="suggestion-text">{{ song.beatmap_set_name }}</span>
+          <br>
+          <span class="suggestion-text">{{ song.creator_name }}</span>
+        </li>
+      </ul>
+
+
     </div>
   </div>
-  <br>
-  <!--    播放时间，格式化为分秒格式-->
-  <div>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</div>
-
-
-  <!--  歌曲信息-->
-  <div>
-    当前播放：{{ beatmapName }}
-  </div>
-
-  <!--  播放列表-->
-  <div>
-    <d-button @click="switchShowNotPlayedQueue">已放列表</d-button>
-    <d-button @click="switchShowPlayedQueue">待放列表</d-button>
-    <d-button @click="exit">退出房间</d-button>
-
-    <ul v-if="showPlayedQueue">
-      <li v-for="song in playedQueue" :key="song">
-        <span class="suggestion-text">{{ song.sort }} .</span>
-        <span class="suggestion-text">{{ song.beatmap_set_name }}</span>
-        <br>
-        <span class="suggestion-text">{{ song.creator_name }}</span>
-      </li>
-    </ul>
-
-
-    <ul v-if="showNotPlayedQueue">
-      <li v-for="song in notPlayedQueue" :key="song">
-        <span class="suggestion-text">{{ song.sort }} .</span>
-        <span class="suggestion-text">{{ song.beatmap_set_name }}</span>
-        <br>
-        <span class="suggestion-text">{{ song.creator_name }}</span>
-      </li>
-    </ul>
-
-
-  </div>
-</div>
 </template>
 
 <style scoped>
