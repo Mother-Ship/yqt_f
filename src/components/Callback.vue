@@ -1,5 +1,5 @@
 <template>
-
+<div>正在认证……</div>
 </template>
 
 <script setup>

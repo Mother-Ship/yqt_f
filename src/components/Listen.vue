@@ -4,12 +4,11 @@ import {onMounted, ref, watch} from "vue";
 import axios from 'axios';
 import JSZip from 'jszip';
 import localForage from "localforage";
-import {getParam, post} from '@/util/util.js'
-import {formatTime} from '@/util/util.js'
+import {formatTime, getParam, post} from '@/util/util.js'
 import {NotificationService} from 'vue-devui/notification';
 import {onBeforeUnmount} from "@vue/runtime-core";
-
-import Search from './Search.vue';
+// noinspection ES6UnusedImports
+import Search from "@/components/Search.vue";
 
 const volume = ref(50); // 创建响应式数据 volume
 
@@ -29,7 +28,7 @@ onMounted(async () => {
   await refreshToken();
 
   var protocol = localStorage.getItem('Authorization');
-  ws = new WebSocket("ws://" + import.meta.env.VITE_BACKEND_URL +":8095/websocket/" + roomId.value, [protocol]);
+  ws = new WebSocket("ws://" + import.meta.env.VITE_BACKEND_URL + ":8095/websocket/" + roomId.value, [protocol]);
   ws.onopen = function () {
     NotificationService.open({
       title: '房间连接成功',
@@ -49,6 +48,9 @@ onMounted(async () => {
       sid.value = data.data.current_beatmap_set_id;
       beatmapName.value = data.data.current_beatmap_name;
       startTime.value = data.data.server_timestamp - data.data.current_beatmap_start_timestamp
+      playedQueue.value = data.data.played_queue.reverse();
+      notPlayedQueue.value = data.data.not_played_queue;
+      handleLyric(data.data.current_beatmap_lyric);
       preload(data.data.next_beatmap_set_id);
       startPlayback();
     }
@@ -71,6 +73,7 @@ onMounted(async () => {
       type: 'info',
       duration: 3000
     });
+    if (audioRef.value) audioRef.value.pause()
     window.location.href = "#roomList";
   };
 
@@ -84,8 +87,6 @@ function getAvatar(uid) {
 }
 
 //预缓存
-
-
 async function preload(sid) {
   const cachedMp3Data = await localForage.getItem('cachedMp3_' + sid);
   if (cachedMp3Data) {
@@ -195,13 +196,25 @@ const progressPercent = ref(0);
 const currentTime = ref(0);
 const duration = ref(0);
 
-//确保audio对象不是null之后再调用
+//更新进度条、歌词
 function updateProgress() {
 
   const audioPlayer = audioRef.value;
   currentTime.value = audioPlayer.currentTime;
   duration.value = audioPlayer.duration;
   progressPercent.value = (currentTime.value / duration.value) * 100;
+
+  let i = 0
+
+  // 循环歌词对象
+  for (let key in currentLyric.value) {
+    if (key > audioPlayer.currentTime) {
+      lyricIndex.value = i;
+      break;
+    }
+    i++;
+  }
+
 }
 
 //暂停继续
@@ -244,6 +257,33 @@ function switchShowNotPlayedQueue() {
   }
 }
 
+//歌词
+const currentLyric = ref({});
+const lyricIndex = ref(0);
+
+async function handleLyric(lyric) {
+  // 处理歌词，转化成key为时间，value为歌词的对象
+  let lyricArr = lyric.split('[').slice(1); // 先以[进行分割
+  let lrcObj = {};
+  lyricArr.forEach(item => {
+    let arr = item.split(']');	// 再分割右括号
+    // 时间换算成秒
+    let m = parseInt(arr[0].split(':')[0])
+    let s = parseInt(arr[0].split(':')[1])
+    arr[0] = m * 60 + s;
+    if (arr[1] !== '\n') { // 去除歌词中的单行换行符
+      if (lrcObj[arr[0]]) {
+        lrcObj[arr[0]]  += arr[1];
+      } else {
+        lrcObj[arr[0]] = arr[1];
+      }
+
+    }
+  })
+  currentLyric.value = lrcObj;
+
+}
+
 //官网链接
 function openPpySh() {
   window.open('https://osu.ppy.sh/beatmapsets/' + sid.value);
@@ -267,10 +307,7 @@ function exit() {
 function handleSelectSuggestion(suggestion) {
   ws.send("order_" + suggestion.sid);
   NotificationService.open({
-    content: '点歌' + suggestion.artistU === "" ? suggestion.artist : suggestion.artistU
-    + '-' +
-    suggestion.titleU === "" ? suggestion.title : suggestion.titleU
-        + '(' + suggestion.creator + ')成功',
+    content: '点歌成功',
   });
 }
 
@@ -333,13 +370,18 @@ const handleGlobalClick = (event) => {
       当前播放：{{ notPlayedQueue[0].beatmap_set_name }}
     </div>
     <div v-if="notPlayedQueue.length > 0">
-    点歌人：{{ notPlayedQueue[0].creator_name }}
+      点歌人：{{ notPlayedQueue[0].creator_name }}
     </div>
-
+    <ul ref="lyric" class="lyric">
+      <li v-for="(item, key, index) in currentLyric" :key="key"
+          :style="{color: lyricIndex === index ? 'skyblue' : '#ded9d9'}">
+        {{ item }}
+      </li>
+    </ul>
     <!--  播放列表-->
     <div>
-      <d-button @click="switchShowNotPlayedQueue">已放列表</d-button>
-      <d-button @click="switchShowPlayedQueue">待放列表</d-button>
+      <d-button @click="switchShowNotPlayedQueue">待放列表</d-button>
+      <d-button @click="switchShowPlayedQueue">已放列表</d-button>
       <d-button @click="exit">退出房间</d-button>
 
       <ul v-if="showPlayedQueue">
